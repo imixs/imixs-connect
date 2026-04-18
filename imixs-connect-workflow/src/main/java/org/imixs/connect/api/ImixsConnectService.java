@@ -279,6 +279,12 @@ public class ImixsConnectService implements Serializable {
     private void mergeResponseIntoWorkitem(ItemCollection workitem, String responseXml,
             List<String> resultParams, boolean debug) throws PluginException {
 
+        // Empty response body is valid - nothing to merge
+        if (responseXml == null || responseXml.isBlank()) {
+            logger.info("├── empty response body – nothing to merge.");
+            return;
+        }
+
         // Unmarshal the response XML into an XMLDocument via JAXB
         ItemCollection responseData;
         try {

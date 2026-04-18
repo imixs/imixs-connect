@@ -5,13 +5,15 @@ A user submits an offer in Imixs-Workflow. At the moment of submission, Imixs-Co
 automatically calls an N8N Webhook that validates the company name and enriches the
 workitem with full customer data — without any custom Java code.
 
+<img src="n8n-workflow.png" />
+
 ## The Use Case
 
 ```
 Imixs-Workflow                    N8N
 ──────────────                    ──────────────────────────
 User submits offer
-  → offer.company = "Acme"
+  → customer.name = "Acme"
                       ──POST──►  Webhook Node
                                  │
                                  ├── IF: company known?
@@ -81,32 +83,75 @@ curl -v -X POST http://localhost:5678/webhook-test/imixs-connect \
 
 A correct response returns `HTTP 200`.
 
+**Publish the workflow** so that the productive webhook URL `/webhook/imixs-connect` becomes active. During development N8N also provides a
+test URL at `/webhook-test/imixs-connect` — but only while the workflow editor
+is open. For production always use the published URL.
+
 ---
 
 ### Node 2 — Code: Parse incoming XMLDocument
 
-Imixs-Connect sends a standard Imixs XMLDocument as the POST body. Add a **Code**
-node (JavaScript) to extract the item values:
+Imixs-Connect sends a standard Imixs XMLDocument as the POST body with
+`Content-Type: application/xml`. N8N automatically parses incoming XML into a
+JSON object using the `xml2js` library. This means the request body is **not**
+available as a raw XML string but as a pre-parsed JSON structure.
+
+The Imixs XMLDocument:
+
+```xml
+<document>
+    <item name="customer.name">
+        <value xsi:type="xs:string">Acme</value>
+    </item>
+</document>
+```
+
+Becomes this JSON structure in N8N:
+
+```json
+{
+  "body": {
+    "document": {
+      "item": {
+        "$": { "name": "customer.name" },
+        "value": {
+          "_": "Acme",
+          "$": { "xsi:type": "xs:string" }
+        }
+      }
+    }
+  }
+}
+```
+
+N8N uses the `xml2js` convention where XML **attributes** are stored under `$`
+and XML **text content** is stored under `_`.
+
+Add a **Code** node (JavaScript) that navigates this structure to extract the
+item values:
 
 ```javascript
-// Parse the incoming Imixs XMLDocument and extract item values
-const bodyXml = $input.first().json.body;
+// N8N automatically parses the incoming XML into a JSON object (xml2js format).
+// XML attributes are stored under '$', text content under '_'.
+const body = $input.first().json.body;
+const document = body.document;
 
-// Helper: extract item value by name from Imixs XMLDocument
-function getItemValue(xml, itemName) {
-  const regex = new RegExp(
-    `<item name="${itemName}">\\s*<value[^>]*>([^<]*)</value>`,
-    "i",
-  );
-  const match = xml.match(regex);
-  return match ? match[1].trim() : null;
+// Helper: extract item value by name from the pre-parsed N8N XML structure
+function getItemValue(doc, itemName) {
+  const items = doc.item;
+  // items can be a single object or an array if multiple items are present
+  const itemArray = Array.isArray(items) ? items : [items];
+  const found = itemArray.find((i) => i.$ && i.$.name === itemName);
+  return found ? found.value._ : null;
 }
 
-const company = getItemValue(bodyXml, "offer.company");
-const email = getItemValue(bodyXml, "offer.email");
-
-return [{ json: { company, email } }];
+const company = getItemValue(document, "customer.name");
+return [{ json: { company } }];
 ```
+
+> **Note:** If the Imixs XMLDocument contains multiple `<item>` elements, N8N
+> represents them as an array. The helper function handles both cases — a single
+> item object and an array of items.
 
 ---
 
@@ -130,7 +175,8 @@ Add an **IF** node to check whether the company name is recognized.
 Add a **Code** node on the **True** branch to build the Imixs XMLDocument response:
 
 ```javascript
-// Build a valid Imixs XMLDocument response with customer data
+// Build a valid Imixs XMLDocument response with customer data.
+// The item names must match the result-params configured in the BPMN event.
 const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <document xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xmlns:xs="http://www.w3.org/2001/XMLSchema">
@@ -152,10 +198,13 @@ return [{ json: { xml } }];
 
 ### Node 4b — Code: Empty response (False branch)
 
-Add a **Code** node on the **False** branch for unknown companies:
+Add a **Code** node on the **False** branch for unknown companies. Returning an
+empty but valid XMLDocument is the correct way to signal "no data found" without
+causing an error in Imixs-Connect:
 
 ```javascript
-// Return an empty but valid Imixs XMLDocument
+// Return an empty but valid Imixs XMLDocument.
+// Imixs-Connect will receive HTTP 200 and simply find no items to merge.
 const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <document xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xmlns:xs="http://www.w3.org/2001/XMLSchema">
@@ -176,16 +225,16 @@ Add a **Respond to Webhook** node and connect both Code nodes (4a and 4b) to it.
 | Response Code | `200`             |
 | Response Body | `{{ $json.xml }}` |
 
-Add a custom response header so that Imixs-Connect can correctly parse the response
-as an Imixs XMLDocument:
+Add a custom response header so that Imixs-Connect can correctly parse the response:
 
 | Header Name    | Header Value      |
 | -------------- | ----------------- |
 | `Content-Type` | `application/xml` |
 
-> **Important:** The `Content-Type: application/xml` response header is required.
-> Without it Imixs-Connect cannot unmarshal the response and will throw a
-> `PluginException`.
+> **Important:** `Respond With` must be set to `Text` — not `JSON` and not
+> `First Incoming Item's Binary Data`. Any other setting causes N8N to wrap
+> the XML string in a JSON envelope, which Imixs-Connect cannot unmarshal.
+> The `Content-Type: application/xml` header is also required.
 
 Your final N8N workflow looks like this:
 
@@ -202,8 +251,6 @@ Your final N8N workflow looks like this:
                               [Respond to Webhook]
 ```
 
-**Activate the workflow** using the toggle in the top right corner of N8N.
-
 ---
 
 ## Part 2: Configure the BPMN Model
@@ -219,7 +266,7 @@ following Imixs-Connect configuration to the event's **Signal** definition:
     <endpoint-id>N8N</endpoint-id>
     <debug>true</debug>
     <on-error>continue</on-error>
-    <request-params>offer.company, offer.email</request-params>
+    <request-params>customer.name</request-params>
     <result-params>customer.id, customer.name, customer.status</result-params>
 </imixs-connect>
 ```
@@ -241,18 +288,24 @@ sequence flow on the Submit event:
 "" != workitem.getItemValueString("adapter.error_code")
 ```
 
+You can also check whether the customer lookup returned a result:
+
+```
+"" == workitem.getItemValueString("customer.id")
+```
+
 This allows you to route the process to a fallback state — for example a manual
-review task — instead of silently continuing.
+review task — instead of silently continuing with missing customer data.
 
 ---
 
 ## Part 3: Test It
 
 1. Open a workitem in your Imixs application
-2. Enter `offer.company` = `Acme` and `offer.email` = `test@acme.com`
+2. Enter `customer.name` = `Acme`
 3. Submit the workitem
-4. Check the server log for the `debug` output — you should see the request and
-   response XML
+4. Check the server log for the `debug` output — you should see the full
+   request and response XML
 5. After processing, the workitem should contain:
 
 | Item              | Value            |
@@ -261,8 +314,9 @@ review task — instead of silently continuing.
 | `customer.name`   | `Acme Corp GmbH` |
 | `customer.status` | `GOLD`           |
 
-In N8N you can inspect the execution history under **Executions** to see the
-full request/response flow for each trigger.
+In N8N you can inspect the full execution history under **Executions** — click
+on any execution and then on a node in the workflow diagram to see its exact
+input and output data.
 
 ---
 

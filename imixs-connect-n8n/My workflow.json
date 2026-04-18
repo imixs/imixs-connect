@@ -1,0 +1,218 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "imixs-connect",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        16,
+        0
+      ],
+      "id": "c9bf8ecd-a241-4534-ab88-4b344006a430",
+      "name": "Webhook",
+      "webhookId": "ac824719-5164-4e56-aa14-f43dbcf288a6",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "3uMrEI1wEYb8LZej",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Navigate the pre-parsed XML structure from N8N\nconst body = $input.first().json.body;\nconst document = body.document;\n\n// Helper: extract item value by name from pre-parsed N8N XML object\nfunction getItemValue(doc, itemName) {\n  const items = doc.item;\n  // items can be a single object or an array\n  const itemArray = Array.isArray(items) ? items : [items];\n  const found = itemArray.find(i => i.$ && i.$.name === itemName);\n  return found ? found.value._ : null;\n}\n\nconst company = getItemValue(document, 'customer.name');\nreturn [{ json: { company } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "f2a40970-16bf-4560-9a31-5d556586da4c",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a2be6a28-6408-49c5-8842-4765e618d03b",
+              "leftValue": "={{ $json.company }}",
+              "rightValue": "Acme",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "8aff0de0-1935-4f59-9c28-2d2aadb297de",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build a valid Imixs XMLDocument response with customer data\nconst xml = `<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<document xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n          xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">\n    <item name=\"customer.id\">\n        <value xsi:type=\"xs:string\">CUST-4711</value>\n    </item>\n    <item name=\"customer.name\">\n        <value xsi:type=\"xs:string\">Acme Corp GmbH</value>\n    </item>\n    <item name=\"customer.status\">\n        <value xsi:type=\"xs:string\">GOLD</value>\n    </item>\n</document>`;\n\nreturn [{ json: { xml } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        -96
+      ],
+      "id": "f37336fc-b03c-47f7-a625-7f4b2cbc1d09",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Return an empty but valid Imixs XMLDocument\nconst xml = `<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<document xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n          xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">\n</document>`;\n\nreturn [{ json: { xml } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        96
+      ],
+      "id": "00d23339-65ba-4077-b9ec-26458cf810f6",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.xml }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        880,
+        48
+      ],
+      "id": "eeb15dd4-d2c6-4915-980b-3226c746fa97",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "name": "First item",
+          "code": 1
+        }
+      },
+      {
+        "json": {
+          "name": "Second item",
+          "code": 2
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "77edc6ca-e818-4146-b8ab-690deb696063",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d38e74f536aa524ad4ed13ec0ab02e419b1c46f1665003a7333fa6b363d1b64f"
+  },
+  "id": "3XfYlA0pdZkDtyJ2",
+  "tags": []
+}
