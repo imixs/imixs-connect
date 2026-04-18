@@ -24,13 +24,13 @@ import jakarta.inject.Inject;
 
 /**
  * The ImixsConnectAdapter is a {@link SignalAdapter} that integrates external
- * systems into the Imixs-Workflow processing life cycle via a generic
- * HTTP/XML endpoint.
+ * systems into the Imixs-Workflow processing life cycle via a generic HTTP/XML
+ * endpoint.
  * <p>
  * The adapter reads its configuration from the BPMN event definition and
  * delegates the actual HTTP call to {@link ImixsConnectService}. Multiple
- * <code>&lt;imixs-connect&gt;</code> definitions can be placed on a single
- * BPMN event — they are executed sequentially in the order they appear.
+ * <code>&lt;imixs-connect&gt;</code> definitions can be placed on a single BPMN
+ * event — they are executed sequentially in the order they appear.
  * <p>
  * Example BPMN event configuration:
  *
@@ -78,17 +78,18 @@ public class ImixsConnectAdapter implements SignalAdapter {
     protected ImixsConnectService connectService;
 
     /**
-     * Executes all <code>&lt;imixs-connect&gt;</code> definitions found in the
-     * BPMN event configuration sequentially.
+     * Executes all <code>&lt;imixs-connect&gt;</code> definitions found in the BPMN
+     * event configuration sequentially.
      * <p>
      * For each definition the adapter resolves the endpoint, parses the
-     * request/result item lists and delegates to {@link ImixsConnectService}.
-     * Error handling follows the <code>on-error</code> setting per definition.
+     * request/result item lists and delegates to {@link ImixsConnectService}. Error
+     * handling follows the <code>on-error</code> setting per definition.
      *
      * @param workitem - the current workflow workitem
      * @param event    - the BPMN event containing the imixs-connect configuration
      * @return the workitem enriched with result items from the external endpoint
-     * @throws AdapterException if on-error=continue and a communication error occurs
+     * @throws AdapterException if on-error=continue and a communication error
+     *                          occurs
      * @throws PluginException  if on-error=throw and a communication error occurs,
      *                          or if the response XML is malformed
      */
@@ -101,7 +102,7 @@ public class ImixsConnectAdapter implements SignalAdapter {
 
         // Read all <imixs-connect> definitions from the BPMN event
         List<ItemCollection> connectDefinitions = workflowService.evalWorkflowResultXML(
-                event, IMIXS_CONNECT_TAG, null, workitem, false);
+                event, IMIXS_CONNECT_TAG, "POST", workitem, false);
 
         if (connectDefinitions == null || connectDefinitions.isEmpty()) {
             logger.warning("ImixsConnectAdapter: no <imixs-connect> definition found in event – skipped.");
@@ -116,7 +117,7 @@ public class ImixsConnectAdapter implements SignalAdapter {
             if (endpointId.isEmpty()) {
                 throw new PluginException(
                         ImixsConnectAdapter.class.getSimpleName(),
-                        ImixsConnectService.ERROR_CONNECT,
+                        ImixsConnectService.ERROR_CONNECT_IO,
                         "Missing <endpoint-id> in <imixs-connect> definition – verify BPMN model.");
             }
 
@@ -154,7 +155,8 @@ public class ImixsConnectAdapter implements SignalAdapter {
                             ImixsConnectAdapter.class.getSimpleName(),
                             e.getErrorCode(),
                             "ImixsConnect call to endpoint '" + endpointId
-                                    + "' failed (on-error=throw): " + e.getMessage(), e);
+                                    + "' failed (on-error=throw): " + e.getMessage(),
+                            e);
                 } else {
                     // on-error=continue - rethrow AdapterException, BPMN handles it
                     if (debug) {
